@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 st.set_page_config(page_title="Finance Dashboard", layout="wide")
 st.title("🛡️ 5-Year Risk Analysis & Curved Trend Prediction")
 st.markdown("### 📊 **Institutional-Grade Portfolio Analytics**")
-st.markdown("#### *A 5-year quantitative study using Polynomial Regression to capture market momentum.*")
+st.markdown("#### *A 5-year quantitative study using Random Forest to capture market momentum.*")
 
 # 1. Sidebar Selection
 st.sidebar.header("Portfolio Settings")
@@ -22,7 +22,7 @@ selected_tickers = st.sidebar.multiselect(
     max_selections=4
 )
 
-# --- NEW FEATURE: Forecast Slider ---
+# Forecast Slider
 st.sidebar.divider()
 st.sidebar.subheader("Forecast Horizon")
 forecast_months = st.sidebar.slider(
@@ -43,8 +43,11 @@ start_date = datetime.now() - timedelta(days=1825)
 
 @st.cache_data
 def get_data(symbols, start):
+    # Fetch data and isolate 'Close' column immediately
     df = yf.download(symbols, start=start)['Close']
-    if isinstance(df, pd.Series):
+    
+    # If only one ticker is selected, yfinance returns a Series; convert to DF
+    if len(symbols) == 1:
         df = df.to_frame(name=symbols[0])
     return df
 
@@ -71,7 +74,7 @@ with col1:
     plt.tight_layout()
     st.pyplot(fig1)
 
---- GRAPH 2: Sharpe Ratio ---
+# --- GRAPH 2: Sharpe Ratio ---
 with col2:
     st.subheader("2. Sharpe Ratio (Risk Efficiency)")
     fig2, ax2 = plt.subplots(figsize=(10, 6))
@@ -98,50 +101,43 @@ with col3:
     plt.tight_layout()
     st.pyplot(fig3)
 
-# --- GRAPH 4: 5-Year AI-Simulated Pattern ---
+# --- GRAPH 4: AI Pattern Forecast ---
 with col4:
-    st.subheader(f"4. {forecast_months}-Month Global Pattern Forecast")
+    st.subheader(f"4. {forecast_months}-Month Pattern Projection")
     fig4, ax4 = plt.subplots(figsize=(10, 6))
-    
+
     for i, stock in enumerate(selected_tickers):
-        # 1. Prepare data using the FULL 5-year history
-        y_train = data[stock].values # This is the full 1,260+ days
-        y_train = y_train[~np.isnan(y_train)] # removes not a number error
+        # FIX: Ensure we select the specific column correctly from the DataFrame
+        y_train = data[stock].dropna().values 
         X_train = np.arange(len(y_train)).reshape(-1, 1)
-        
-        # 2. Train Random Forest on the full 5 years
-        # We increase n_estimators to 200 to handle the larger data volume
+
+        # Train Random Forest
         model = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
         model.fit(X_train, y_train)
-        
-        # 3. Create Future Timeline
+
+        # Create Future Timeline
         future_X = np.arange(len(y_train), len(y_train) + forecast_days).reshape(-1, 1)
-        
-        # 4. Generate the AI Prediction
         base_forecast = model.predict(future_X)
-        
-        # 5. Add "Realistic Wiggle" based on 5-year Volatility
-        # This ensures the 'jagged' pattern matches the historical style
+
+        # Add "Realistic Wiggle" based on historical Volatility
         volatility = np.std(np.diff(y_train)) 
         noise = np.random.normal(0, volatility * 0.7, size=forecast_days)
         forecast = base_forecast + noise
-        
-        # 6. Visual Zoom (90 Days)
-        # We still zoom in so you can see the 'pattern' clearly
+
+        # Visual Zoom (90 Days history + Forecast)
         zoom_view = 90
         x_hist = np.arange(zoom_view)
         x_pred = np.arange(zoom_view, zoom_view + forecast_days)
-        
-        # Plot History
+
+        # Plot History (last 90 days)
         ax4.plot(x_hist, y_train[-zoom_view:], color=colors[i], alpha=0.5, lw=1.5, label=f"{stock} Hist")
-        
-        # Plot Prediction (Jagged Pattern style)
+
+        # Plot Prediction
         full_pred_x = np.insert(x_pred, 0, x_hist[-1])
         full_pred_y = np.insert(forecast, 0, y_train[-1])
-        
-        ax4.plot(full_pred_x, full_pred_y, color=colors[i], lw=1.5, label=f"{stock} AI")
+        ax4.plot(full_pred_x, full_pred_y, color=colors[i], lw=2, linestyle='--', label=f"{stock} AI")
 
-    ax4.set_title("5-Year Global Pattern Projection")
+    ax4.set_title("AI-Simulated Price Momentum")
     ax4.set_ylabel("Price ($)")
     ax4.legend(loc='upper left', prop={'size': 8}, ncol=2)
     plt.tight_layout()
