@@ -92,41 +92,46 @@ with col3:
     st.pyplot(fig3)
 
 with col4:
-    st.subheader(f"4. AI Pattern Forecast ({forecast_months}M)")
+    st.subheader("4. AI Pattern Forecast")
     fig4, ax4 = plt.subplots(figsize=(10, 6))
     
     for i, stock in enumerate(selected_tickers):
-        y_train = data[stock].dropna().values
-        X_train = np.arange(len(y_train)).reshape(-1, 1)
-        model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42).fit(X_train, y_train)
+        prices = data[stock].dropna().values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        
+        # Training the AI model
+        model = RandomForestRegressor(n_estimators=50, random_state=42)
+        model.fit(X, prices)
 
-        # Forecasting
-        future_X = np.arange(len(y_train), len(y_train) + forecast_days).reshape(-1, 1)
+        # Future Indices
+        future_X = np.arange(len(prices), len(prices) + forecast_days).reshape(-1, 1)
         forecast = model.predict(future_X)
         
-        # --- FIX: Connecting the lines ---
-        # We append the last actual price to the start of the forecast to close the gap
-        hist_segment = y_train[-60:] # Show last 60 days for context
-        x_hist = np.arange(len(hist_segment))
+        # --- FIX: Connecting and Smoothing the line ---
+        # We show the last 30 days of history
+        hist_view = prices[-30:]
+        x_hist = np.arange(len(hist_view))
         
-        # Plotting History
-        ax4.plot(x_hist, hist_segment, color=colors[i], alpha=0.4, label=f"{stock} Hist" if i==0 else "")
+        # Plot History
+        ax4.plot(x_hist, hist_view, color=colors[i], alpha=0.5, lw=1)
         
-        # Plotting Forecast (Starts exactly at the end of history)
-        x_fore = np.arange(len(hist_segment) - 1, len(hist_segment) + forecast_days - 1)
-        fore_plot_data = np.insert(forecast, 0, hist_segment[-1])
-        ax4.plot(x_fore, fore_plot_data, color=colors[i], lw=2, linestyle='--', label=f"{stock} Forecast")
+        # Connect Forecast to the last actual point
+        x_fore = np.arange(len(hist_view) - 1, len(hist_view) + forecast_days - 1)
+        # Ensure the first point of forecast is the last point of history
+        y_fore = np.concatenate([[hist_view[-1]], forecast])
+        
+        ax4.plot(x_fore, y_fore, color=colors[i], lw=2, linestyle='--', label=f"{stock} Forecast")
 
-    ax4.set_xlabel("Trading Days (Recent + Future)")
+    ax4.set_title(f"Next {forecast_days} Trading Days Pattern", fontsize=12)
+    ax4.set_xlabel("Relative Trading Days")
     ax4.set_ylabel("Stock Price ($)")
-    ax4.legend(loc='upper left', fontsize='small', ncol=2)
+    ax4.legend(ncol=2, fontsize='small')
     st.pyplot(fig4)
 
 st.divider()
-st.subheader("📊 Performance Metrics Summary")
-summary_df = pd.DataFrame({
-    "Annual Return": (ann_return * 100).round(2).astype(str) + '%',
-    "Annual Volatility": (ann_vol * 100).round(2).astype(str) + '%',
-    "Sharpe Ratio": sharpe.round(3)
-}, index=selected_tickers)
-st.table(summary_df)
+st.subheader("Performance Summary Table")
+st.table(pd.DataFrame({
+    "Return": (ann_return * 100).round(2).astype(str) + '%',
+    "Risk (Vol)": (ann_vol * 100).round(2).astype(str) + '%',
+    "Sharpe": sharpe.round(2)
+}, index=selected_tickers))
