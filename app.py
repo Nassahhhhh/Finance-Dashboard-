@@ -106,6 +106,7 @@ with col4:
     for i, stock in enumerate(selected_tickers):
         # 1. Prepare data using the FULL 5-year history
         y_train = data[stock].values # This is the full 1,260+ days
+        y_train = y_train[~np.isnan(y_train)] # removes not a number error
         X_train = np.arange(len(y_train)).reshape(-1, 1)
         
         # 2. Train Random Forest on the full 5 years
