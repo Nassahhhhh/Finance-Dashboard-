@@ -9,8 +9,6 @@ from sklearn.ensemble import RandomForestRegressor
 # Page Configuration
 st.set_page_config(page_title="Finance Dashboard", layout="wide")
 st.title("🛡️ 5-Year Risk Analysis & Curved Trend Prediction")
-st.markdown("### 📊 **Institutional-Grade Portfolio Analytics**")
-st.markdown("#### *A 5-year quantitative study using Random Forest to capture market momentum.*")
 
 # 1. Sidebar Selection
 st.sidebar.header("Portfolio Settings")
@@ -22,133 +20,86 @@ selected_tickers = st.sidebar.multiselect(
     max_selections=4
 )
 
-# Forecast Slider
-st.sidebar.divider()
 st.sidebar.subheader("Forecast Horizon")
-forecast_months = st.sidebar.slider(
-    "Select Forecast Duration (Months)", 
-    min_value=1, 
-    max_value=6, 
-    value=1,
-    step=1
-)
-forecast_days = forecast_months * 21 # Converting months to trading days
+forecast_months = st.sidebar.slider("Months", 1, 6, 1)
+forecast_days = forecast_months * 21
 
-if len(selected_tickers) == 0:
-    st.info("Please select at least one ticker in the sidebar.")
+if not selected_tickers:
+    st.info("Select tickers to begin.")
     st.stop()
 
-# Timeframe: Exactly 5 Years
+# Timeframe
 start_date = datetime.now() - timedelta(days=1825)
 
 @st.cache_data
 def get_data(symbols, start):
-    # Fetch data and isolate 'Close' column immediately
     df = yf.download(symbols, start=start)['Close']
-    
-    # If only one ticker is selected, yfinance returns a Series; convert to DF
     if len(symbols) == 1:
         df = df.to_frame(name=symbols[0])
-    return df
+    # FORCE the columns to stay in the order you selected them
+    return df[symbols]
 
 data = get_data(selected_tickers, start_date)
 returns = data.pct_change().dropna()
 
-# 2. Risk Metrics
+# 2. Risk Metrics (Calculated once, correctly indexed)
 ann_return = returns.mean() * 252
 ann_vol = returns.std() * np.sqrt(252)
 sharpe = ann_return / ann_vol
 
-# 3. Dashboard Grid
 plt.style.use('ggplot')
 colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
 col1, col2 = st.columns(2)
 
-# --- GRAPH 1: Cumulative Growth ---
 with col1:
-    st.subheader("1. 5-Year Cumulative Growth ($1 Invested)")
+    st.subheader("1. 5-Year Cumulative Growth")
     fig1, ax1 = plt.subplots(figsize=(10, 6))
     (1 + returns).cumprod().plot(ax=ax1, lw=2.5, color=colors[:len(selected_tickers)])
-    ax1.set_ylabel("Growth Factor")
-    ax1.grid(True, alpha=0.3)
-    plt.tight_layout()
     st.pyplot(fig1)
 
-# --- GRAPH 2: Sharpe Ratio ---
 with col2:
     st.subheader("2. Sharpe Ratio (Risk Efficiency)")
     fig2, ax2 = plt.subplots(figsize=(10, 6))
-    ax2.bar(selected_tickers, sharpe, color=colors[:len(selected_tickers)], alpha=0.8)
-    ax2.set_ylabel("Sharpe Ratio Value")
-    ax2.axhline(0, color='black', lw=1)
-    for i, v in enumerate(sharpe):
+    # Using the explicit index from the 'sharpe' series to ensure labels match bars
+    ax2.bar(sharpe.index, sharpe.values, color=colors[:len(selected_tickers)], alpha=0.8)
+    for i, v in enumerate(sharpe.values):
         ax2.text(i, v + 0.02, f"{v:.2f}", ha='center', weight='bold')
-    plt.tight_layout()
     st.pyplot(fig2)
 
 st.divider()
 col3, col4 = st.columns(2)
 
-# --- GRAPH 3: Risk vs. Reward Mapping ---
 with col3:
-    st.subheader("3. Risk vs. Reward (Volatility Map)")
+    st.subheader("3. Risk vs. Reward")
     fig3, ax3 = plt.subplots(figsize=(10, 6))
-    ax3.scatter(ann_vol * 100, ann_return * 100, s=500, c=colors[:len(selected_tickers)], alpha=0.6, edgecolors='black')
-    for i, txt in enumerate(selected_tickers):
-        ax3.annotate(txt, (ann_vol.iloc[i]*100, ann_return.iloc[i]*100), xytext=(0,15), textcoords='offset points', ha='center', weight='bold')
-    ax3.set_xlabel("Annual Volatility (%)")
-    ax3.set_ylabel("Annual Return (%)")
-    plt.tight_layout()
+    ax3.scatter(ann_vol * 100, ann_return * 100, s=500, c=colors[:len(selected_tickers)], alpha=0.6)
+    for i, txt in enumerate(sharpe.index):
+        ax3.annotate(txt, (ann_vol.iloc[i]*100, ann_return.iloc[i]*100), xytext=(0,15), textcoords='offset points', ha='center')
     st.pyplot(fig3)
 
-# --- GRAPH 4: AI Pattern Forecast ---
 with col4:
-    st.subheader(f"4. {forecast_months}-Month Pattern Projection")
+    st.subheader(f"4. AI Pattern Forecast")
     fig4, ax4 = plt.subplots(figsize=(10, 6))
-
     for i, stock in enumerate(selected_tickers):
-        # FIX: Ensure we select the specific column correctly from the DataFrame
-        y_train = data[stock].dropna().values 
+        y_train = data[stock].dropna().values
         X_train = np.arange(len(y_train)).reshape(-1, 1)
-
-        # Train Random Forest
-        model = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
-        model.fit(X_train, y_train)
-
-        # Create Future Timeline
+        model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42).fit(X_train, y_train)
+        
         future_X = np.arange(len(y_train), len(y_train) + forecast_days).reshape(-1, 1)
-        base_forecast = model.predict(future_X)
-
-        # Add "Realistic Wiggle" based on historical Volatility
-        volatility = np.std(np.diff(y_train)) 
-        noise = np.random.normal(0, volatility * 0.7, size=forecast_days)
-        forecast = base_forecast + noise
-
-        # Visual Zoom (90 Days history + Forecast)
-        zoom_view = 90
-        x_hist = np.arange(zoom_view)
-        x_pred = np.arange(zoom_view, zoom_view + forecast_days)
-
-        # Plot History (last 90 days)
-        ax4.plot(x_hist, y_train[-zoom_view:], color=colors[i], alpha=0.5, lw=1.5, label=f"{stock} Hist")
-
-        # Plot Prediction
-        full_pred_x = np.insert(x_pred, 0, x_hist[-1])
-        full_pred_y = np.insert(forecast, 0, y_train[-1])
-        ax4.plot(full_pred_x, full_pred_y, color=colors[i], lw=2, linestyle='--', label=f"{stock} AI")
-
-    ax4.set_title("AI-Simulated Price Momentum")
-    ax4.set_ylabel("Price ($)")
-    ax4.legend(loc='upper left', prop={'size': 8}, ncol=2)
-    plt.tight_layout()
+        forecast = model.predict(future_X) + np.random.normal(0, np.std(np.diff(y_train)) * 0.7, size=forecast_days)
+        
+        # Zoom view
+        x_hist = np.arange(90)
+        ax4.plot(x_hist, y_train[-90:], color=colors[i], alpha=0.4)
+        ax4.plot(np.arange(90, 90 + forecast_days), forecast, color=colors[i], lw=2, linestyle='--')
     st.pyplot(fig4)
 
-# 4. Final Data Summary Table
 st.divider()
 st.subheader("Performance Metrics Summary")
+# Ensure the table uses the exact same order as the charts
 summary_df = pd.DataFrame({
-    "Annual Return": (ann_return * 100).round(2).astype(str) + "%",
-    "Annual Volatility": (ann_vol * 100).round(2).astype(str) + "%",
-    "Sharpe Ratio": sharpe.round(2)
-})
+    "Annual Return": (ann_return * 100).round(2).map("{:.2f}%".format),
+    "Annual Volatility": (ann_vol * 100).round(2).map("{:.2f}%".format),
+    "Sharpe Ratio": sharpe.round(4)
+}, index=sharpe.index)
 st.table(summary_df)
