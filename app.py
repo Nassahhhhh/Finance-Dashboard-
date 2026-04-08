@@ -71,7 +71,7 @@ with col1:
     plt.tight_layout()
     st.pyplot(fig1)
 
-# --- GRAPH 2: Sharpe Ratio ---
+--- GRAPH 2: Sharpe Ratio ---
 with col2:
     st.subheader("2. Sharpe Ratio (Risk Efficiency)")
     fig2, ax2 = plt.subplots(figsize=(10, 6))
