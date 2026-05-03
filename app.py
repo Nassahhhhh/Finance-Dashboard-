@@ -141,21 +141,31 @@ with col4:
         rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
 
         # ── STEP 6: Rolling Forecast for Future Days ──────────────────────
-        # Seed with the last known lag values from the full dataset
-        last_prices = list(prices.values[-22:])  # keep a buffer of 22 prices
+        # Use the last 60 REAL prices as a buffer so lag features start correctly
+        last_prices = list(prices.values[-60:])
         forecast = []
+        volatility = np.std(np.diff(prices.values))
 
-        for _ in range(forecast_days):
-            lag1  = last_prices[-1]
-            lag5  = last_prices[-5]  if len(last_prices) >= 5  else last_prices[0]
-            lag21 = last_prices[-21] if len(last_prices) >= 21 else last_prices[0]
+        # Compute the recent daily drift (average daily change over last 21 days)
+        # This anchors the forecast near the current price level
+        recent_drift = np.mean(np.diff(prices.values[-22:]))
+
+        for day in range(forecast_days):
+            lag1   = last_prices[-1]
+            lag5   = last_prices[-5]
+            lag21  = last_prices[-21]
             roll21 = np.mean(last_prices[-21:])
 
-            next_price = model.predict([[lag1, lag5, lag21, roll21]])[0]
+            raw_pred = model.predict([[lag1, lag5, lag21, roll21]])[0]
 
-            # Add calibrated noise based on historical volatility
-            volatility = np.std(np.diff(prices.values))
-            next_price += np.random.normal(0, volatility * 0.5)
+            # Blend the model prediction with a drift-anchored estimate
+            # This prevents the model from pulling prices to its learned "average"
+            drift_estimate = last_prices[-1] + recent_drift
+            blended = 0.6 * raw_pred + 0.4 * drift_estimate
+
+            # Add small calibrated noise (realistic daily fluctuation)
+            noise = np.random.normal(0, volatility * 0.4)
+            next_price = blended + noise
 
             forecast.append(next_price)
             last_prices.append(next_price)
